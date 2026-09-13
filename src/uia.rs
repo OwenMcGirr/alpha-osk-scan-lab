@@ -15,10 +15,7 @@ use windows::{
     core::{BSTR, Interface, Result},
 };
 
-pub const WINDOW_ID: &str = "QGuiApplication.alphaOskKeyboard";
-// PR #114's real QApplication launcher emits this prefix. Its QGuiApplication
-// test harness emits WINDOW_ID. Accept only these two pinned identities.
-pub const QAPPLICATION_WINDOW_ID: &str = "QApplication.alphaOskKeyboard";
+pub const WINDOW_ID: &str = "alphaOsk.alphaOskKeyboard";
 pub const REVISION_ID: &str = "aosk.v1.revision";
 
 #[derive(Default, Clone, Serialize)]
@@ -146,14 +143,9 @@ impl Client {
     }
     pub unsafe fn windows(&self) -> Result<Vec<IUIAutomationElement>> {
         let root = self.automation.GetRootElement()?;
-        let documented = self
+        let cond = self
             .automation
             .CreatePropertyCondition(UIA_AutomationIdPropertyId, &VARIANT::from(WINDOW_ID))?;
-        let actual = self.automation.CreatePropertyCondition(
-            UIA_AutomationIdPropertyId,
-            &VARIANT::from(QAPPLICATION_WINDOW_ID),
-        )?;
-        let cond = self.automation.CreateOrCondition(&documented, &actual)?;
         let list = root.FindAll(TreeScope_Children, &cond)?;
         (0..list.Length()?).map(|i| list.GetElement(i)).collect()
     }

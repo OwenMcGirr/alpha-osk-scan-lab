@@ -4,15 +4,15 @@ A Windows Rust test application for scanning Alpha-OSK keys and predictions thro
 
 ## Run
 
-Requires Windows and an Alpha-OSK build with the UIA target/revision contract from PR #114. The tested source is commit `0641e0ad8866eaad945518e8d41ed0439a7cf3c2`, not the main-branch release. No additional IPC server is implemented here.
+Requires Windows and an Alpha-OSK build with the UIA target/revision contract from PR #114. The tested source is commit `b75ec07125addc58896f0835fbb38879d4811d72`, not the main-branch release. No additional IPC server is implemented here.
 
 Run `target\release\alpha-osk-scan-lab.exe` alongside a compatible keyboard, or run `./launch.ps1` to launch the isolated recording fixture and lab together. The fixture requires Alpha's Python environment with PySide6 and its dependencies. Pass `-AlphaSource` and `-Python` to override local defaults. `-LiveInput` enables real keyboard input; without it, fixture activations are recorded in `work/fixture/input-records.jsonl` and do not type into applications. Do not run two fixtures using the same work directory.
 
-The launcher defaults to a sibling `alpha-osk-uia` checkout and `~/repos/alpha-osk/venv/Scripts/python.exe`. To prepare the tested source from an existing Alpha checkout, run:
+The launcher defaults to a sibling `alpha-osk-uia-b75ec07` checkout and `~/repos/alpha-osk/venv/Scripts/python.exe`. To prepare the tested source from an existing Alpha checkout, run:
 
 ```powershell
 git -C ../alpha-osk fetch origin refs/pull/114/head
-git -C ../alpha-osk worktree add --detach ../alpha-osk-uia 0641e0ad8866eaad945518e8d41ed0439a7cf3c2
+git -C ../alpha-osk worktree add --detach ../alpha-osk-uia-b75ec07 b75ec07125addc58896f0835fbb38879d4811d72
 ```
 
 The lab starts paused. Select the instance if multiple compatible keyboards are running.
@@ -35,7 +35,7 @@ A change invalidates the overlay until a consistent snapshot arrives. Geometry-o
 
 Activation checks the revision, target identity, state, and geometry against the captured selection, then rechecks the revision immediately before UIA Invoke. No mouse click simulation, hold, or repeat is used. Cross-process calls stay off the UI thread. The overlay cannot accept focus or mouse input.
 
-The client accepts both `QGuiApplication.alphaOskKeyboard` and `QApplication.alphaOskKeyboard`: the actual QApplication launcher emits the latter. It accepts only documented `aosk.v1` key and prediction IDs, excluding dialogs and pickers.
+The client discovers the stable `alphaOsk.alphaOskKeyboard` window ID. Older application-class IDs are no longer accepted; use the fixed PR build linked above. The recording fixture uses the upstream application object name while keeping its own settings identity. It accepts only documented `aosk.v1` key and prediction IDs, excluding dialogs and pickers.
 
 ## Build and validate
 
@@ -52,6 +52,6 @@ cargo run --offline -- --ui-smoke work/fixture
 cargo run --offline -- --probe 10
 ```
 
-Omit `--offline` for the first dependency download on another machine. Both fixture validators refuse live-input fixtures. Results go to `measurements/`. The test-only command file changes fixture layout, geometry, predictions, and privacy; it is not a public Alpha IPC protocol.
+Omit `--offline` for the first dependency download on another machine. Both fixture validators refuse live-input fixtures. Live validation directly invokes retained prediction elements after both identical-word and different-word replacements, without the client revalidation path. A stale Invoke must produce zero recorded synthesis calls and its identity must not change; the precise UIA error is diagnostic only. A current prediction is invoked as a positive control. Provider failures are recorded and cause a nonzero exit. Results go to `measurements/`. The test-only command file changes fixture layout, geometry, predictions, and privacy; it is not a public Alpha IPC protocol.
 
 See `VALIDATION.md` for measured results and remaining limitations. This is an unsigned development prototype, not a production accessibility service.

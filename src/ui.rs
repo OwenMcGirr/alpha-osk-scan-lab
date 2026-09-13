@@ -449,7 +449,7 @@ impl App {
     }
     unsafe fn export(&mut self) {
         let dir = project().join("measurements");
-        let output = serde_json::json!({"schema":1,"alpha_test_revision":"0641e0ad8866eaad945518e8d41ed0439a7cf3c2",
+        let output = serde_json::json!({"schema":1,"alpha_test_revision":"b75ec07125addc58896f0835fbb38879d4811d72",
             "poll_ms":self.settings.poll_ms,"targets":self.targets.len(),"changes":self.changes,
             "beacon_read":self.beacon.summary(),"cached_snapshot":self.snapshots.summary(),"detection_to_paint_submission":self.paint.summary(),
             "notes":"Rolling last 4096 timings; paint submission is not DWM presentation or provider-change latency. No labels, revisions, typing, or target identities exported."});

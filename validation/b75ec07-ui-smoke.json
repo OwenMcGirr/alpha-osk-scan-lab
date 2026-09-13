@@ -1,0 +1,29 @@
+{
+  "beacon": {
+    "count": 18,
+    "p50_ms": 1.3697,
+    "p95_ms": 1.7786,
+    "window_samples": 18
+  },
+  "checks": [
+    "timer-driven linear scan advances",
+    "shortcut selection waits for release, invokes once, preserves foreground",
+    "row selection and cancel/back transitions",
+    "overlay paints snapshots and is click-through, topmost, nonactivating, Per-Monitor V2"
+  ],
+  "detection_to_paint_submission": {
+    "count": 2,
+    "p50_ms": 101.3707,
+    "p95_ms": 101.3707,
+    "window_samples": 2
+  },
+  "note": "Own-app smoke test using a recording Alpha fixture; actual global keystrokes and physical switch hardware are not synthesized.",
+  "passed": true,
+  "snapshot": {
+    "count": 2,
+    "p50_ms": 51.743900000000004,
+    "p95_ms": 51.743900000000004,
+    "window_samples": 2
+  },
+  "targets": 81
+}
