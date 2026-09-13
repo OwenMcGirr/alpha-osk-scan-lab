@@ -46,7 +46,44 @@ impl Samples {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Visibility {
+    Shown,
+    Minimised,
+    NotRunning,
+    Unavailable,
+    ChooseInstance,
+}
+impl Visibility {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Shown => "Shown",
+            Self::Minimised => "Minimised",
+            Self::NotRunning => "Not running",
+            Self::Unavailable => "Unavailable",
+            Self::ChooseInstance => "Choose an instance",
+        }
+    }
+}
+#[derive(Clone, Copy)]
+pub enum VisibilityAction {
+    Minimise,
+    Recall,
+    Toggle,
+}
+pub unsafe fn visibility(root: &IUIAutomationElement) -> Result<Visibility> {
+    let pattern: IUIAutomationWindowPattern = root.GetCurrentPatternAs(UIA_WindowPatternId)?;
+    match pattern.CurrentWindowVisualState()? {
+        state if state == WindowVisualState_Normal => Ok(Visibility::Shown),
+        state if state == WindowVisualState_Minimized => Ok(Visibility::Minimised),
+        _ => Err(windows::core::Error::new(
+            E_FAIL,
+            "Unsupported window state",
+        )),
+    }
+}
 pub enum Command {
+    Visibility(VisibilityAction),
     Refresh,
     Poll(u64),
     Choose(i32),
@@ -54,6 +91,8 @@ pub enum Command {
     Stop,
 }
 pub enum Event {
+    Visibility(Visibility),
+    VisibilityResult(String),
     Status(String),
     Candidates(Vec<(i32, String)>),
     Invalidated,
@@ -267,6 +306,8 @@ unsafe fn run(
     let mut retry = Instant::now();
     let mut valid = false;
     let mut pending_detection = None;
+    let mut visible = Visibility::Unavailable;
+    let mut transition: Option<(Visibility, Instant)> = None;
     loop {
         let command = commands.recv_timeout(Duration::from_millis(2));
         match command {
@@ -277,7 +318,56 @@ unsafe fn run(
             }
             Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Ok(Command::Poll(ms)) => poll = ms.clamp(16, 1000),
+            Ok(Command::Visibility(action)) => {
+                valid = false;
+                refs.clear();
+                let _ = events.send(Event::Invalidated);
+                let result = (|| -> Result<Visibility> {
+                    if transition.is_some() {
+                        return Err(windows::core::Error::new(
+                            E_FAIL,
+                            "Visibility change already pending",
+                        ));
+                    }
+                    let r = root.as_ref().ok_or_else(|| {
+                        windows::core::Error::new(E_FAIL, "No connected keyboard")
+                    })?;
+                    let current = visibility(r)?;
+                    let desired = match action {
+                        VisibilityAction::Minimise => Visibility::Minimised,
+                        VisibilityAction::Recall => Visibility::Shown,
+                        VisibilityAction::Toggle => {
+                            if current == Visibility::Shown {
+                                Visibility::Minimised
+                            } else {
+                                Visibility::Shown
+                            }
+                        }
+                    };
+                    let pattern: IUIAutomationWindowPattern =
+                        r.GetCurrentPatternAs(UIA_WindowPatternId)?;
+                    // Qt reports CanMinimize=false for its custom title bar. The operation is supported.
+                    pattern.SetWindowVisualState(if desired == Visibility::Shown {
+                        WindowVisualState_Normal
+                    } else {
+                        WindowVisualState_Minimized
+                    })?;
+                    Ok(desired)
+                })();
+                match result {
+                    Ok(desired) => transition = Some((desired, Instant::now())),
+                    Err(e) => {
+                        let _ = events.send(Event::VisibilityResult(format!(
+                            "Visibility change failed: {e}"
+                        )));
+                    }
+                }
+                last_poll = Instant::now() - Duration::from_secs(1);
+            }
             Ok(Command::Choose(pid)) => {
+                transition = None;
+                visible = Visibility::Unavailable;
+                let _ = events.send(Event::Visibility(visible));
                 chosen = Some(pid);
                 root = None;
                 beacon = None;
@@ -317,6 +407,12 @@ unsafe fn run(
                     }
                     let invoke: IUIAutomationInvokePattern =
                         el.GetCurrentPatternAs(UIA_InvokePatternId)?;
+                    let r = root.as_ref().ok_or_else(|| {
+                        windows::core::Error::new(E_FAIL, "Keyboard disconnected")
+                    })?;
+                    if visibility(r)? != Visibility::Shown {
+                        return Err(windows::core::Error::new(E_FAIL, "Keyboard is not shown"));
+                    }
                     if b.CurrentName()? != expected {
                         return Err(windows::core::Error::new(
                             E_FAIL,
@@ -348,6 +444,8 @@ unsafe fn run(
             let windows = match client.windows() {
                 Ok(windows) => windows,
                 Err(e) => {
+                    visible = Visibility::Unavailable;
+                    let _ = events.send(Event::Visibility(visible));
                     let next = format!("UIA discovery failed; retrying: {e}");
                     if next != status {
                         status = next;
@@ -394,6 +492,12 @@ unsafe fn run(
                 }
                 let _ = events.send(Event::Candidates(candidates));
             } else {
+                visible = if windows.len() > 1 {
+                    Visibility::ChooseInstance
+                } else {
+                    Visibility::NotRunning
+                };
+                let _ = events.send(Event::Visibility(visible));
                 let next = if windows.len() > 1 {
                     "Multiple keyboards: choose a process"
                 } else {
@@ -411,14 +515,36 @@ unsafe fn run(
             continue;
         }
         last_poll = Instant::now();
-        let started = Instant::now();
         let result = (|| -> Result<()> {
             let r = root.as_ref().unwrap();
-            // Hidden windows may lose their beacon. Re-discover rather than keeping stale rectangles.
+            let state = visibility(r)?;
+            if state != visible {
+                visible = state;
+                valid = false;
+                refs.clear();
+                let _ = events.send(Event::Invalidated);
+                let _ = events.send(Event::Visibility(state));
+            }
+            if let Some((desired, since)) = transition {
+                if state == desired {
+                    transition = None;
+                    let _ = events.send(Event::VisibilityResult(format!(
+                        "Keyboard {}",
+                        state.label().to_lowercase()
+                    )));
+                } else if since.elapsed() > Duration::from_secs(3) {
+                    transition = None;
+                    let _ = events.send(Event::VisibilityResult(
+                        "Visibility change timed out; current state shown in status".into(),
+                    ));
+                }
+            }
+            // Minimized windows retain their provider and revision beacon.
             if beacon.is_none() {
                 beacon = Some(client.find_id(r, REVISION_ID)?);
             }
             let b = beacon.as_ref().unwrap();
+            let started = Instant::now();
             let value = b.CurrentName()?.to_string();
             let beacon_ms = started.elapsed().as_secs_f64() * 1000.0;
             if value == revision && valid {
@@ -434,13 +560,17 @@ unsafe fn run(
             valid = false;
             let detected = *pending_detection.get_or_insert_with(Instant::now);
             let snapshot_start = Instant::now();
-            let (targets, elements) = client.snapshot(r)?;
+            let (targets, elements) = if state == Visibility::Shown {
+                client.snapshot(r)?
+            } else {
+                (Vec::new(), HashMap::new())
+            };
             let after = b.CurrentName()?.to_string();
             let _ = events.send(Event::Timing {
                 beacon_ms,
                 snapshot_ms: Some(snapshot_start.elapsed().as_secs_f64() * 1000.0),
             });
-            if after != value {
+            if after != value || visibility(r)? != state {
                 return Ok(());
             }
             revision = value;
@@ -459,6 +589,13 @@ unsafe fn run(
             Ok(())
         })();
         if let Err(e) = result {
+            visible = Visibility::Unavailable;
+            let _ = events.send(Event::Visibility(visible));
+            if transition.take().is_some() {
+                let _ = events.send(Event::VisibilityResult(format!(
+                    "Visibility change could not be confirmed: {e}"
+                )));
+            }
             valid = false;
             refs.clear();
             root = None;

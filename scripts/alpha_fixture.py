@@ -27,12 +27,12 @@ from PySide6.QtGui import QAccessible, QGuiApplication
 from PySide6.QtWidgets import QApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem
-from src.keyboard_app import UIA_APPLICATION_NAME, _apply_window_flags, _wire_floating_windows
+from src.keyboard_app import UIA_APPLICATION_NAME, _KeyboardApplication, _apply_window_flags, _wire_floating_windows
 from src.keyboard_bridge import KeyboardBridge
 from tests.qml_context import install_context_properties
 
 QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-app = QApplication([])
+app = _KeyboardApplication([])
 app.setObjectName(UIA_APPLICATION_NAME)
 app.setOrganizationName("alpha-osk-scan-lab-fixture")
 app.setApplicationName("Alpha-OSK-Scan-Fixture")
@@ -72,6 +72,9 @@ if not engine.rootObjects():
 root = engine.rootObjects()[0]
 _apply_window_flags(root)
 _wire_floating_windows(root)
+from src.platform import windows_window
+quiet_restore = windows_window.install_quiet_restore(root)
+app.keyboard_window = root
 QAccessible.setActive(True)
 try:
     last_seq = json.loads((args.work / "fixture-command.json").read_text(encoding="utf-8-sig"))["seq"]
@@ -122,7 +125,7 @@ def tick():
         elif op == "lock":
             bridge.lockModifier(cmd["modifier"])
         elif op == "visible":
-            root.setVisible(bool(cmd["visible"]))
+            root.showNormal() if cmd["visible"] else root.showMinimized()
         elif op == "quit":
             app.quit()
         else:

@@ -1,4 +1,30 @@
-# Validation — 13 September 2026
+# Keyboard visibility validation - 13 September 2026
+
+Tested Alpha-OSK PR #114 at `870f21a34123ad48c6f40336c02606a8ce031b6f`. This latest commit updates documentation; the minimise/restore implementation is from `69d6e56`. The recording fixture uses the upstream application subclass and retains the quiet-restore native filter. Settings are isolated. Device pixel ratio was 2.5, with no desktop text injection.
+
+## Results
+
+- Formatting, Clippy with warnings denied, seven unit tests, and release build passed.
+- All 13 existing live UIA checks passed, including stale predictions, privacy, layouts and target activation.
+- The expanded native UI smoke passed six groups of checks. It covers both visibility buttons, the toggle command in both directions, shortcut conflict rejection, cancellation of deferred activation, cleared overlay targets while minimised, and recall remaining paused.
+- The visibility validator passed eight groups of checks. Its separate native text receiver kept foreground and text-field focus through three worker minimise/recall cycles, a second client recalling an already-minimised keyboard, and direct provider state changes. WinEvent hooks monitored transient foreground and focus changes; GetGUIThreadInfo checked the focused child. A separate control window deliberately took focus to validate the monitor.
+- A key and prediction were captured immediately before minimisation and invoked directly while minimised. Both returned success but produced zero recorded synthesis calls. The minimised provider exposed no targets. Fresh keys and predictions activated after recall.
+- The watcher detected direct provider state changes through revised state/beacon data, retained the minimised instance, and reported Not running after fixture shutdown.
+- Computer control verified the visible controls, automatic connection when Alpha started after the lab, an injected Ctrl+Alt+F11 shortcut, and clicking Recall. The display changed between Shown with 73 targets and Minimised with zero targets, remaining paused.
+
+The live run measured 50 beacon reads with median 0.069 ms and p95 0.396 ms. Twelve snapshots measured median 18.863 ms and p95 21.098 ms. UI smoke timings varied more with desktop load. These small diagnostic samples do not establish latency guarantees.
+
+Raw reports: [live UIA](validation/870f21a-live.json), [UI smoke](validation/870f21a-ui-smoke.json), and [visibility](validation/870f21a-visibility.json). Reports identify the actual source commit. The visibility validator quits its recording fixture after checking shutdown and closes its receiver process on success or failure.
+
+## Earlier failures and remaining limits
+
+During harness development, one run lost foreground to the Alpha keyboard in its first minimise/recall cycle. The test did not yet log which half of the cycle failed. Later complete runs passed, but the trigger has not been isolated. This observation remains unresolved; the passing reports are not a claim that every restore is reliable. No client focus-repair workaround was added.
+
+Other development runs stopped during receiver focus setup. Setup now waits up to three seconds to acquire focus before measurements begin and fails if it cannot. A separate restored-prediction test initially consumed an older queued snapshot; it now waits for the expected beacon revision and reports activation rejection directly. Those harness fixes do not dismiss the earlier keyboard foreground observation.
+
+Signed installed UIAccess, mixed-DPI multi-monitor alignment, physical switch/keyboard delivery, actual taskbar clicks, and real desktop text insertion remain unverified. The computer-control shortcut check uses injected input, not hardware. Direct provider state tests call the same Qt minimise/restore operations, not a physical title-bar or taskbar click. Alpha-OSK and Switchify source were not modified.
+
+# Historical validation at b75ec07 - 13 September 2026
 
 Verified against Alpha-OSK PR #114 at `b75ec07125addc58896f0835fbb38879d4811d72` on Windows. The isolated fixture used the real QML and bridge, the upstream application object name, separate settings, and a recording synthesizer. Device pixel ratio was 2.5. No desktop input was injected.
 

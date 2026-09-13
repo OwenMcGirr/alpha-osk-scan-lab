@@ -1,6 +1,6 @@
 use crate::{
     core::*,
-    uia::{Command, Event, Samples, Worker},
+    uia::{Command, Event, Samples, Visibility, VisibilityAction, Worker},
 };
 use std::{
     cell::RefCell,
@@ -24,6 +24,9 @@ const APPLY: i32 = 104;
 const EXPORT: i32 = 105;
 const CHOOSE: i32 = 106;
 const OUTLINES: i32 = 107;
+const MINIMISE: i32 = 108;
+const RECALL: i32 = 109;
+const TOGGLE_VISIBILITY: i32 = 110;
 const COL_KEY: COLORREF = COLORREF(0x00ff00ff);
 thread_local! { static APP: RefCell<Option<App>> = const { RefCell::new(None) }; }
 
@@ -39,7 +42,7 @@ struct App {
     mode_box: HWND,
     poll_box: HWND,
     interval: HWND,
-    keys: [HWND; 3],
+    keys: [HWND; 4],
     candidates_box: HWND,
     outline_box: HWND,
     candidate_pids: Vec<i32>,
@@ -51,6 +54,7 @@ struct App {
     revision: String,
     valid: bool,
     status: String,
+    visibility: Visibility,
     action: String,
     changes: Changes,
     beacon: Samples,
@@ -64,6 +68,7 @@ struct App {
     smoke: Option<Smoke>,
 }
 struct Smoke {
+    alpha_commit: String,
     stage: u8,
     since: Instant,
     began: Instant,
@@ -288,6 +293,28 @@ impl App {
             WS_TABSTOP.0 | WS_BORDER.0 | ES_MULTILINE as u32 | ES_AUTOVSCROLL as u32,
             (18, 486, 615, 60),
         );
+        self.label("Global minimise / recall", (18, 558, 230, 20));
+        self.keys[3] = self.child(
+            w!("EDIT"),
+            &self.settings.visibility_key.clone(),
+            0,
+            WS_TABSTOP.0 | WS_BORDER.0 | ES_AUTOHSCROLL as u32,
+            (18, 580, 195, 26),
+        );
+        self.child(
+            w!("BUTTON"),
+            "Minimise keyboard",
+            MINIMISE,
+            WS_TABSTOP.0,
+            (240, 579, 185, 29),
+        );
+        self.child(
+            w!("BUTTON"),
+            "Recall keyboard",
+            RECALL,
+            WS_TABSTOP.0,
+            (440, 579, 185, 29),
+        );
         self.layout();
     }
     unsafe fn layout(&self) {
@@ -305,7 +332,12 @@ impl App {
     }
     unsafe fn register(&self, s: &Settings) -> std::result::Result<(), String> {
         let mut parsed = Vec::new();
-        for k in [&s.start_key, &s.select_key, &s.cancel_key] {
+        for k in [
+            &s.start_key,
+            &s.select_key,
+            &s.cancel_key,
+            &s.visibility_key,
+        ] {
             let v = parse_hotkey(k)
                 .ok_or_else(|| format!("Invalid shortcut: {k}. Use modifiers plus F1-F24."))?;
             if parsed.contains(&v) {
@@ -313,13 +345,13 @@ impl App {
             }
             parsed.push(v);
         }
-        for i in 1..=3 {
+        for i in 1..=4 {
             let _ = UnregisterHotKey(Some(self.window), i);
         }
         for (i, (m, k)) in parsed.into_iter().enumerate() {
             if let Err(e) = RegisterHotKey(Some(self.window), i as i32 + 1, HOT_KEY_MODIFIERS(m), k)
             {
-                for j in 1..=3 {
+                for j in 1..=4 {
                     let _ = UnregisterHotKey(Some(self.window), j);
                 }
                 return Err(format!("Shortcut {} unavailable: {e}", i + 1));
@@ -350,6 +382,7 @@ impl App {
             start_key: text(self.keys[0]),
             select_key: text(self.keys[1]),
             cancel_key: text(self.keys[2]),
+            visibility_key: text(self.keys[3]),
         };
         if let Err(e) = self.register(&s) {
             let restored = self.register(&self.settings);
@@ -382,6 +415,16 @@ impl App {
     }
     unsafe fn command(&mut self, cmd: i32, from_button: bool) {
         match cmd {
+            MINIMISE | RECALL | TOGGLE_VISIBILITY => {
+                self.suspend();
+                let action = match cmd {
+                    MINIMISE => VisibilityAction::Minimise,
+                    RECALL => VisibilityAction::Recall,
+                    _ => VisibilityAction::Toggle,
+                };
+                let _ = self.worker.tx.send(Command::Visibility(action));
+                self.action = "Changing keyboard visibility...".into();
+            }
             START => {
                 if self.valid && !self.targets.is_empty() {
                     self.scanner.running = !self.scanner.running;
@@ -449,7 +492,7 @@ impl App {
     }
     unsafe fn export(&mut self) {
         let dir = project().join("measurements");
-        let output = serde_json::json!({"schema":1,"alpha_test_revision":"b75ec07125addc58896f0835fbb38879d4811d72",
+        let output = serde_json::json!({"schema":1,"alpha_reference_revision":"870f21a34123ad48c6f40336c02606a8ce031b6f",
             "poll_ms":self.settings.poll_ms,"targets":self.targets.len(),"changes":self.changes,
             "beacon_read":self.beacon.summary(),"cached_snapshot":self.snapshots.summary(),"detection_to_paint_submission":self.paint.summary(),
             "notes":"Rolling last 4096 timings; paint submission is not DWM presentation or provider-change latency. No labels, revisions, typing, or target identities exported."});
@@ -469,10 +512,28 @@ impl App {
             Err(e) => self.action = format!("Export failed: {e}"),
         }
     }
+    unsafe fn suspend(&mut self) {
+        self.scanner.running = false;
+        self.scanner.reset();
+        self.valid = false;
+        self.targets.clear();
+        self.groups.clear();
+        self.deferred_activation = None;
+        self.pending_invoke = false;
+        set_text(self.map_box, "");
+    }
     unsafe fn tick(&mut self) {
         let mut redraw = false;
         while let Ok(event) = self.worker.rx.try_recv() {
             match event {
+                Event::Visibility(state) => {
+                    self.visibility = state;
+                    if state != Visibility::Shown {
+                        self.suspend();
+                    }
+                    redraw = true;
+                }
+                Event::VisibilityResult(result) => self.action = result,
                 Event::Status(s) => {
                     self.status = s;
                     if !self.status.starts_with("Connected") {
@@ -613,13 +674,13 @@ impl App {
                     serde_json::json!({"passed":false,"error":error}).to_string(),
                 );
                 PostQuitMessage(1);
-            } else if smoke.stage < 7 {
+            } else if smoke.stage < 12 {
                 self.smoke = Some(smoke);
             }
         }
     }
     unsafe fn smoke_tick(&mut self, s: &mut Smoke) -> std::result::Result<(), String> {
-        if s.began.elapsed() > Duration::from_secs(15) {
+        if s.began.elapsed() > Duration::from_secs(30) {
             return Err(format!(
                 "UI smoke timed out at stage {}: {}",
                 s.stage, self.action
@@ -693,8 +754,49 @@ impl App {
                     return Err("Overlay is not Per-Monitor V2 aware".into());
                 }
                 s.checks.push("overlay paints snapshots and is click-through, topmost, nonactivating, Per-Monitor V2");
+                let mut conflicting = self.settings.clone();
+                conflicting.visibility_key = conflicting.select_key.clone();
+                if self.register(&conflicting).is_ok() {
+                    return Err("Duplicate visibility shortcut accepted".into());
+                }
+                self.deferred_activation = Some((
+                    self.revision.clone(),
+                    self.targets[0].clone(),
+                    Instant::now(),
+                ));
+                self.pending_invoke = true;
+                self.command(MINIMISE, true);
+                if self.deferred_activation.is_some() || self.pending_invoke {
+                    return Err("Minimise did not cancel deferred selection".into());
+                }
+                s.stage = 5;
+            }
+            5 if self.visibility == Visibility::Minimised && self.valid => {
+                if !self.targets.is_empty() || !self.groups.is_empty() || self.scanner.running {
+                    return Err("Minimise retained scanning or overlay targets".into());
+                }
+                s.checks.push("minimise button clears overlay, pauses scanning and cancels deferred selection; duplicate shortcut rejected");
+                self.command(TOGGLE_VISIBILITY, false);
+                s.stage = 6;
+            }
+            6 if self.visibility == Visibility::Shown && self.valid && !self.targets.is_empty() => {
+                if self.scanner.running {
+                    return Err("Recall unexpectedly resumed scanning".into());
+                }
+                self.command(TOGGLE_VISIBILITY, false);
+                s.stage = 8;
+            }
+            8 if self.visibility == Visibility::Minimised && self.valid => {
+                self.command(RECALL, true);
+                s.stage = 9;
+            }
+            9 if self.visibility == Visibility::Shown && self.valid && !self.targets.is_empty() => {
+                if self.scanner.running {
+                    return Err("Recall button unexpectedly resumed scanning".into());
+                }
+                s.checks.push("global visibility command toggles both ways; recall button refreshes targets and stays paused");
                 self.export();
-                let report = serde_json::json!({"passed":true,"checks":s.checks,"targets":self.targets.len(),
+                let report = serde_json::json!({"passed":true,"alpha_commit":s.alpha_commit,"checks":s.checks,"targets":self.targets.len(),
                     "detection_to_paint_submission":self.paint.summary(),"beacon":self.beacon.summary(),"snapshot":self.snapshots.summary(),
                     "note":"Own-app smoke test using a recording Alpha fixture; actual global keystrokes and physical switch hardware are not synthesized."});
                 std::fs::write(
@@ -702,7 +804,7 @@ impl App {
                     serde_json::to_vec_pretty(&report).unwrap(),
                 )
                 .map_err(|e| e.to_string())?;
-                s.stage = 7;
+                s.stage = 12;
                 PostQuitMessage(0);
             }
             _ => {}
@@ -713,8 +815,9 @@ impl App {
         set_text(
             self.status_box,
             &format!(
-                "{} | {} | {} targets",
+                "{} | {} | {} | {} targets",
                 self.status,
+                self.visibility.label(),
                 if !self.valid {
                     "updating"
                 } else if self.scanner.running {
@@ -841,6 +944,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                             1 => START,
                             2 => SELECT,
                             3 => CANCEL,
+                            4 => TOGGLE_VISIBILITY,
                             _ => 0,
                         },
                         false,
@@ -875,6 +979,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
 
 pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
     unsafe {
+        let mut smoke_commit = String::new();
         let smoke_pid = if let Some(path) = smoke_fixture {
             let bytes = std::fs::read(path.join("fixture-state.json"))
                 .map_err(|e| windows::core::Error::new(E_FAIL, e.to_string()))?;
@@ -886,6 +991,10 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
                     "UI smoke requires recording fixture",
                 ));
             }
+            smoke_commit = state["alpha_commit"]
+                .as_str()
+                .unwrap_or("unknown")
+                .to_owned();
             Some(
                 state["pid"]
                     .as_i64()
@@ -940,7 +1049,7 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
             40,
             40,
             (660.0 * scale) as i32,
-            (592.0 * scale) as i32,
+            (660.0 * scale) as i32,
             None,
             None,
             Some(instance.into()),
@@ -981,7 +1090,7 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
             mode_box: HWND::default(),
             poll_box: HWND::default(),
             interval: HWND::default(),
-            keys: [HWND::default(); 3],
+            keys: [HWND::default(); 4],
             candidates_box: HWND::default(),
             outline_box: HWND::default(),
             candidate_pids: vec![],
@@ -996,6 +1105,7 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
             revision: String::new(),
             valid: false,
             status: "Waiting for keyboard".into(),
+            visibility: Visibility::Unavailable,
             action: String::new(),
             changes: Changes::default(),
             beacon: Samples::default(),
@@ -1007,6 +1117,7 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
             pending_invoke: false,
             deferred_activation: None,
             smoke: smoke_pid.map(|_| Smoke {
+                alpha_commit: smoke_commit,
                 stage: 0,
                 since: Instant::now(),
                 began: Instant::now(),
@@ -1037,7 +1148,7 @@ pub fn run(smoke_fixture: Option<&std::path::Path>) -> Result<()> {
         APP.with(|s| {
             if let Some(app) = s.borrow_mut().take() {
                 let _ = KillTimer(Some(window), 1);
-                for i in 1..=3 {
+                for i in 1..=4 {
                     let _ = UnregisterHotKey(Some(window), i);
                 }
                 let _ = DestroyWindow(app.overlay);
