@@ -23,12 +23,12 @@ fn require(ok: bool, reason: &str) -> TestResult<()> {
         Err(std::io::Error::other(reason).into())
     }
 }
-struct Fixture {
-    work: PathBuf,
-    seq: u64,
+pub(crate) struct Fixture {
+    pub(crate) work: PathBuf,
+    pub(crate) seq: u64,
 }
 impl Fixture {
-    fn command(&mut self, mut data: Value) -> TestResult<()> {
+    pub(crate) fn command(&mut self, mut data: Value) -> TestResult<()> {
         self.seq += 1;
         data["seq"] = json!(self.seq);
         let temporary = self.work.join("fixture-command.tmp");
@@ -51,7 +51,7 @@ impl Fixture {
         }
         Err(std::io::Error::other("Fixture command timed out").into())
     }
-    fn records(&self) -> TestResult<usize> {
+    pub(crate) fn records(&self) -> TestResult<usize> {
         match std::fs::read_to_string(self.work.join("input-records.jsonl")) {
             Ok(records) => Ok(records.lines().count()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),

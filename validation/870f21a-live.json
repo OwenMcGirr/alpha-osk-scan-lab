@@ -1,0 +1,60 @@
+{
+  "alpha_commit": "870f21a34123ad48c6f40336c02606a8ce031b6f",
+  "beacon": {
+    "count": 50,
+    "p50_ms": 0.0686,
+    "p95_ms": 0.39580000000000004,
+    "window_samples": 50
+  },
+  "checks": [
+    "discovery, target IDs, nonempty labels, selective TogglePattern",
+    "window movement changes bounds and revision while retaining selection identity",
+    "optional function rows and numpad enter/leave the target map",
+    "compact/full layout change invalidates scan ordering",
+    "letter Invoke reaches existing synthesis route and preserves foreground",
+    "special-key Invoke is one-shot without autorepeat",
+    "modifier Invoke changes TogglePattern; lock read through FullDescription",
+    "unguarded different-round stale prediction inserts nothing",
+    "unguarded identical-round stale prediction inserts nothing",
+    "watcher revision/identity validation cancels stale selection with zero synthesis calls",
+    "current prediction Invoke inserts through the bridge",
+    "privacy mode removes prediction targets",
+    "hidden keyboard has no available scan targets"
+  ],
+  "fixture_records_only": true,
+  "provider_checks": [
+    {
+      "cached_id": "aosk.v1.pred.0.g8",
+      "current_id_before_invoke": null,
+      "expected": "zero synthesis calls; held identity never changes",
+      "hresult": "0x00000000",
+      "invoke_returned_success": false,
+      "new_synthesis_calls": 0,
+      "passed": true,
+      "same_words": false,
+      "test": "unguarded stale prediction Invoke"
+    },
+    {
+      "cached_id": "aosk.v1.pred.0.g10",
+      "current_id_before_invoke": null,
+      "expected": "zero synthesis calls; held identity never changes",
+      "hresult": "0x00000000",
+      "invoke_returned_success": false,
+      "new_synthesis_calls": 0,
+      "passed": true,
+      "same_words": true,
+      "test": "unguarded stale prediction Invoke"
+    }
+  ],
+  "snapshot": {
+    "count": 12,
+    "p50_ms": 18.863,
+    "p95_ms": 21.098499999999998,
+    "window_samples": 12
+  },
+  "unverified": [
+    "mixed-DPI multi-monitor alignment",
+    "signed installed UIAccess boundary",
+    "physical switch hardware"
+  ]
+}

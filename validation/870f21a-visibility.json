@@ -1,0 +1,28 @@
+{
+  "alpha_commit": "870f21a34123ad48c6f40336c02606a8ce031b6f",
+  "checks": [
+    "separate text receiver and foreground/focus event monitor positive control",
+    "three worker minimise/recall cycles preserve foreground and text-field focus, including transient event monitoring",
+    "held key and prediction Invoke insert nothing while minimised",
+    "client connecting to a minimised keyboard discovers it and recalls it",
+    "direct provider minimise/restore changes beacon and watcher state without stealing focus",
+    "fresh restored key activates after another client disconnects",
+    "fresh restored prediction activates through recording bridge",
+    "fixture shutdown becomes Not running"
+  ],
+  "fixture_records_only": true,
+  "focus_cycles": 3,
+  "focus_monitor": "WinEvent foreground and object-focus hooks plus GetGUIThreadInfo; no focus repair during measured operations",
+  "held_invoke_results": [
+    "Ok(())",
+    "Ok(())"
+  ],
+  "passed": true,
+  "unverified": [
+    "signed installed UIAccess",
+    "mixed-DPI multi-monitor alignment",
+    "physical global shortcut delivery",
+    "actual taskbar click",
+    "desktop text insertion"
+  ]
+}

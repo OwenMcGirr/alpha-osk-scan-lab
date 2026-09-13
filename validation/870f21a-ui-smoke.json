@@ -1,0 +1,32 @@
+{
+  "alpha_commit": "870f21a34123ad48c6f40336c02606a8ce031b6f",
+  "beacon": {
+    "count": 26,
+    "p50_ms": 0.33599999999999997,
+    "p95_ms": 32.506,
+    "window_samples": 26
+  },
+  "checks": [
+    "timer-driven linear scan advances",
+    "shortcut selection waits for release, invokes once, preserves foreground",
+    "row selection and cancel/back transitions",
+    "overlay paints snapshots and is click-through, topmost, nonactivating, Per-Monitor V2",
+    "minimise button clears overlay, pauses scanning and cancels deferred selection; duplicate shortcut rejected",
+    "global visibility command toggles both ways; recall button refreshes targets and stays paused"
+  ],
+  "detection_to_paint_submission": {
+    "count": 5,
+    "p50_ms": 71.9347,
+    "p95_ms": 160.81629999999998,
+    "window_samples": 5
+  },
+  "note": "Own-app smoke test using a recording Alpha fixture; actual global keystrokes and physical switch hardware are not synthesized.",
+  "passed": true,
+  "snapshot": {
+    "count": 7,
+    "p50_ms": 29.223300000000002,
+    "p95_ms": 70.17089999999999,
+    "window_samples": 7
+  },
+  "targets": 73
+}

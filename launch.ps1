@@ -1,5 +1,5 @@
 param(
-    [string]$AlphaSource = (Join-Path (Split-Path $PSScriptRoot -Parent) 'alpha-osk-uia-b75ec07'),
+    [string]$AlphaSource = (Join-Path (Split-Path $PSScriptRoot -Parent) 'alpha-osk-uia-870f21a'),
     [string]$Python = "$env:USERPROFILE\repos\alpha-osk\venv\Scripts\python.exe",
     [switch]$LiveInput
 )

@@ -251,6 +251,7 @@ pub struct Settings {
     pub start_key: String,
     pub select_key: String,
     pub cancel_key: String,
+    pub visibility_key: String,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -262,6 +263,7 @@ impl Default for Settings {
             start_key: "Ctrl+Alt+F8".into(),
             select_key: "Ctrl+Alt+F9".into(),
             cancel_key: "Ctrl+Alt+F10".into(),
+            visibility_key: "Ctrl+Alt+F11".into(),
         }
     }
 }
@@ -308,6 +310,18 @@ mod tests {
             toggle: None,
             locked: false,
         }
+    }
+    #[test]
+    fn old_settings_keep_custom_shortcuts_and_get_visibility_default() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"start_key":"Shift+F2","scan_ms":725}"#).unwrap();
+        assert_eq!(settings.start_key, "Shift+F2");
+        assert_eq!(settings.scan_ms, 725);
+        assert_eq!(settings.visibility_key, "Ctrl+Alt+F11");
+        assert_ne!(
+            parse_hotkey(&settings.visibility_key),
+            parse_hotkey(&settings.select_key)
+        );
     }
     #[test]
     fn ids() {

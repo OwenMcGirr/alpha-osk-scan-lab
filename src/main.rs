@@ -4,10 +4,28 @@ mod core;
 mod live_tests;
 mod ui;
 mod uia;
+mod visibility_tests;
 
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args.get(1).is_some_and(|s| s == "--validate-fixture") {
+    if args
+        .get(1)
+        .is_some_and(|s| s == "--focus-receiver" || s == "--validate-visibility")
+    {
+        let path = args
+            .get(2)
+            .map(std::path::Path::new)
+            .expect("Fixture directory or receiver file required");
+        let result = if args[1] == "--focus-receiver" {
+            visibility_tests::receiver(path)
+        } else {
+            visibility_tests::run(path)
+        };
+        if let Err(error) = result {
+            eprintln!("Visibility validation: {error}");
+            std::process::exit(1);
+        }
+    } else if args.get(1).is_some_and(|s| s == "--validate-fixture") {
         unsafe {
             let _ = windows::Win32::UI::HiDpi::SetProcessDpiAwarenessContext(
                 windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
