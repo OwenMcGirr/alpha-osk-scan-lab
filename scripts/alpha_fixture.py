@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 from unittest.mock import MagicMock, patch
 
 parser = argparse.ArgumentParser()
@@ -26,12 +27,13 @@ from PySide6.QtGui import QAccessible, QGuiApplication
 from PySide6.QtWidgets import QApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuick import QQuickItem
-from src.keyboard_app import _apply_window_flags, _wire_floating_windows
+from src.keyboard_app import UIA_APPLICATION_NAME, _apply_window_flags, _wire_floating_windows
 from src.keyboard_bridge import KeyboardBridge
 from tests.qml_context import install_context_properties
 
 QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
 app = QApplication([])
+app.setObjectName(UIA_APPLICATION_NAME)
 app.setOrganizationName("alpha-osk-scan-lab-fixture")
 app.setApplicationName("Alpha-OSK-Scan-Fixture")
 QSettings.setDefaultFormat(QSettings.IniFormat)
@@ -44,6 +46,9 @@ settings.setValue("ui/savedWindowY", 650)
 settings.sync()
 
 record_path = args.work / "input-records.jsonl"
+alpha_commit = subprocess.check_output(
+    ["git", "-C", str(args.alpha), "rev-parse", "HEAD"], text=True
+).strip()
 def record(name, *values):
     with record_path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps({"method": name, "args": values}, default=str) + "\n")
@@ -73,13 +78,21 @@ try:
 except (OSError, ValueError, KeyError):
     last_seq = None
 
-def write_state(seq=None, error=None):
+def write_state(seq=None, error=None, attempt=0):
     state = {"seq": seq, "error": error, "live_input": args.live_input,
+             "alpha_commit": alpha_commit,
              "bounds_logical": [root.x(), root.y(), root.width(), root.height()],
              "dpi_ratio": root.devicePixelRatio(), "pid": os.getpid()}
     tmp = args.work / "fixture-state.tmp"
     tmp.write_text(json.dumps(state), encoding="utf-8")
-    tmp.replace(args.work / "fixture-state.json")
+    try:
+        tmp.replace(args.work / "fixture-state.json")
+    except PermissionError:
+        # Windows readers can briefly prevent atomic replacement. Retry without
+        # blocking Qt's event loop or losing this command's acknowledgement.
+        if attempt >= 25:
+            raise
+        QTimer.singleShot(20, lambda: write_state(seq, error, attempt + 1))
 
 def tick():
     global last_seq
